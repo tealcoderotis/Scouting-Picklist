@@ -44,7 +44,7 @@ class ClassificationContainer(QtWidgets.QWidget):
     def __init__(self, isAllTeamContainer=False, name="Untitled Classification", parent=None, **kwargs):
         super().__init__(parent, **kwargs)
         self.isAllTeamContainer = isAllTeamContainer
-        self.setFixedWidth(300)
+        self.setFixedWidth(400)
         self.mainLayout = QtWidgets.QVBoxLayout()
         self.headerWidget = QtWidgets.QWidget()
         self.headerLayout = QtWidgets.QHBoxLayout()
@@ -68,6 +68,15 @@ class ClassificationContainer(QtWidgets.QWidget):
     
     def remove(self):
         self.parent().layout().removeWidget(self)
+
+    def getTeams(self):
+        return {
+            "name": self.nameEntry.text(),
+            "teams": self.teamListWidget.getTeams()
+        }
+
+    def emptyTeams(self):
+        self.teamListWidget.emptyTeams()
 
 class ClassificationTeamList(QtWidgets.QWidget):
     def __init__(self, isAllTeamContainer=False, parent=None, **kwargs):
@@ -104,9 +113,29 @@ class ClassificationTeamList(QtWidgets.QWidget):
         else:
             self.mainLayout.insertWidget(index, teamLabel)
 
+    def getTeams(self):
+        teams = []
+        for i in range(self.mainLayout.count()):
+            currentWidget = self.mainLayout.itemAt(i).widget()
+            if (type(currentWidget) == TeamLabel):
+                teams.append({
+                    "teamNumber": currentWidget.teamNumber,
+                    "teamName": currentWidget.teamName,
+                    "eliminated": currentWidget.eliminated
+                })
+        return teams
+    
+    def emptyTeams(self):
+        for i in range(self.mainLayout.count()):
+            currentWidget = self.mainLayout.itemAt(i)
+            if type(currentWidget) == TeamLabel:
+                self.mainLayout.removeWidget(currentWidget)
+
 class AutoPopulateDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
+        self.teams = None
+        self.filePath = None
         self.setWindowModality(True)
         self.setWindowTitle("Find Teams")
         self.mainLayout = QtWidgets.QVBoxLayout()
@@ -125,15 +154,19 @@ class AutoPopulateDialog(QtWidgets.QDialog):
         self.eventLabel = QtWidgets.QLabel(text="Event")
         self.mainLayout.addWidget(self.eventLabel)
         self.eventInput = QtWidgets.QComboBox()
+        self.eventInput.setEnabled(False)
         self.mainLayout.addWidget(self.eventInput)
         self.dialogButtons = QtWidgets.QDialogButtonBox()
-        self.dialogButtons.setStandardButtons(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
-        self.dialogButtons.accepted.connect(self.accept)
-        self.dialogButtons.rejected.connect(self.reject)
+        self.dialogButtons.setStandardButtons(QtWidgets.QDialogButtonBox.Open | QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).clicked.connect(self.getTeams)
+        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
+        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Open).clicked.connect(self.openPickListDialog)
+        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Cancel).clicked.connect(self.reject)
         self.mainLayout.addWidget(self.dialogButtons)
         self.show()
 
     def findEvents(self):
+        self.eventInput.clear()
         year = self.seasonInput.text()
         team = self.teamInput.text()
         response = json.loads(requests.get(f"https://www.thebluealliance.com/api/v3/team/frc{team}/events/{year}/simple", headers={"X-TBA-Auth-Key": TBAKey}).text)
@@ -141,19 +174,33 @@ class AutoPopulateDialog(QtWidgets.QDialog):
         for i in response:
             self.eventKeys.append(i["key"])
             self.eventInput.addItem(i["name"])
+        if (len(self.eventKeys) > 0):
+            self.eventInput.setEnabled(True)
+            self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
+        else:
+            self.eventInput.setEnabled(False)
+            self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
 
-    def accept(self):
+    def getTeams(self):
         eventKey = self.eventKeys[self.eventInput.currentIndex()]
         response = json.loads(requests.get(f"https://www.thebluealliance.com/api/v3/event/{eventKey}/teams/simple", headers={"X-TBA-Auth-Key": TBAKey}).text)
         self.teams = {}
         for i in response:
             if i["team_number"] != int(self.teamInput.text()):
                 self.teams[i["team_number"]] = i["nickname"]
-        super().accept()
+        self.teams = dict(sorted(self.teams.items()))
+        self.accept()
+
+    def openPickListDialog(self):
+        filePath = QtWidgets.QFileDialog.getOpenFileName(self, filter="JSON files (*.json)")[0]
+        if (filePath != ""):
+            self.filePath = filePath
+            self.accept()
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.filePath = None
         self.mainLayout = QtWidgets.QHBoxLayout()
         centralWidget = QtWidgets.QWidget()
         centralWidget.setLayout(self.mainLayout)
@@ -168,16 +215,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.teamClassificationListScrollArea.setWidget(teamClassificationListWidget)
         self.mainLayout.addWidget(self.teamClassificationListScrollArea)
         self.classificationList.addStretch()
-        self.addClassification("Overall picks")
         menu = self.menuBar()
         fileMenu = menu.addMenu("File")
         newAction = QtWidgets.QAction("New", self)
         fileMenu.addAction(newAction)
         openAction = QtWidgets.QAction("Open", self)
+        openAction.triggered.connect(self.openPickListDialog)
         fileMenu.addAction(openAction)
         saveAction = QtWidgets.QAction("Save", self)
+        saveAction.triggered.connect(self.savePickList)
         fileMenu.addAction(saveAction)
         saveAsAction = QtWidgets.QAction("Save as", self)
+        saveAsAction.triggered.connect(self.savePickListAs)
         fileMenu.addAction(saveAsAction)
         fileMenu.addSeparator()
         exitAction = QtWidgets.QAction("Exit", self)
@@ -185,20 +234,12 @@ class MainWindow(QtWidgets.QMainWindow):
         fileMenu.addAction(exitAction)
         classificationMenu = menu.addMenu("Classification")
         addClassificationAction = QtWidgets.QAction("Add classification", self)
-        addClassificationAction.triggered.connect(self.addClassificationSingal)
+        addClassificationAction.triggered.connect(lambda: self.addClassification())
         classificationMenu.addAction(addClassificationAction)
-        '''self.addTeam("1", "Team 1")
-        self.addTeam("2", "Team 2")
-        self.addTeam("3", "Team 3")
-        self.addTeam("4", "Team 4")
-        self.addTeam("5", "Team 5")
-        self.addTeam("6", "Team 6")
-        self.addTeam("7", "Team 7")
-        self.addTeam("8", "Team 8")
-        self.addTeam("9", "Team 9")
-        self.addTeam("10", "Team 10")'''
         self.setWindowTitle("Scouting Picklist")
+        self.setMinimumSize(1000, 500)
         self.showMaximized()
+        self.addClassification("Overall picks")
         autoPopulateDialog = AutoPopulateDialog(self)
         if autoPopulateDialog.exec() == 0:
             sys.exit()
@@ -209,12 +250,47 @@ class MainWindow(QtWidgets.QMainWindow):
     def addTeam(self, teamNumber, teamName):
         self.teamListScrollArea.addTeam(teamNumber, teamName)
 
-    def addClassificationSingal(self):
-        self.addClassification()
-
     def addClassification(self, name="Untitled Classification"):
         classificationContainer = ClassificationContainer(False, name)
         self.classificationList.insertWidget(self.classificationList.count() - 1, classificationContainer)
+
+    def clearClassifications(self, addOveralPicks=True):
+        self.teamListScrollArea.emptyTeams()
+        for i in range(self.classificationList.count()):
+            currentWidget = self.classificationList.itemAt(i)
+            if type(currentWidget) == ClassificationTeamList:
+                self.mainLayout.removeWidget(currentWidget)
+        if addOveralPicks:
+            self.addClassification("Overall picks")
+
+    def savePickListAs(self):
+        filePath = QtWidgets.QFileDialog.getSaveFileName(self, filter="JSON files (*.json)")[0]
+        if (filePath != ""):
+            self.filePath = filePath
+            self.savePickList()
+
+    def savePickList(self):
+        if (self.filePath == None):
+            self.savePickListAs()
+        else:
+            allTeams = self.teamListScrollArea.getTeams()
+            allClassifications = []
+            for i in range(self.classificationList.count()):
+                currentWidget = self.classificationList.itemAt(i).widget()
+                if (type(currentWidget) == ClassificationContainer):
+                    allClassifications.append(currentWidget.getTeams())
+            teamJson = json.dumps({
+                "allTeams": allTeams,
+                "classifications": allClassifications
+            })
+            file = open(self.filePath, "w")
+            file.write(teamJson)
+            file.close()
+
+    def openPickListDialog(self):
+        filePath = QtWidgets.QFileDialog.getOpenFileName(self, filter="JSON files (*.json)")[0]
+        if (filePath != ""):
+            self.filePath = filePath
 
 app = QtWidgets.QApplication(sys.argv)
 mainWindow = MainWindow()
