@@ -1,6 +1,7 @@
 import sys
 import requests
 import json
+import asyncio
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 TBAKey = "V86v838SJb4GJhpaNbElRqLSLHFhyBc0LPBscDetwnXZosPS2pmtehPSNNsY6Hy1"
@@ -17,6 +18,7 @@ class TeamLabel(QtWidgets.QWidget):
         self.setLayout(self.mainLayout)
         self.teamLabel = QtWidgets.QLabel(text=f"{teamNumber} - {teamName}")
         self.teamLabel.setText(f"{teamNumber} - {teamName}")
+        self.teamLabel.setWordWrap(True)
         currentFont = self.teamLabel.font()
         currentFont.setStrikeOut(self.eliminated)
         self.teamLabel.setFont(currentFont)
@@ -99,6 +101,7 @@ class ClassificationTeamList(QtWidgets.QWidget):
         self.setAcceptDrops(True)
         self.isAllTeamContainer = isAllTeamContainer
         self.mainLayout = QtWidgets.QVBoxLayout()
+        self.mainLayout.addSpacing(50)
         self.mainLayout.addStretch()
         self.setLayout(self.mainLayout)
     
@@ -125,7 +128,7 @@ class ClassificationTeamList(QtWidgets.QWidget):
     def addTeam(self, teamNumber, teamName, eliminated=False,  index=-1):
         teamLabel = TeamLabel(teamNumber, teamName, eliminated, self.isAllTeamContainer)
         if (index == -1):
-            self.mainLayout.insertWidget(self.mainLayout.count() - 1, teamLabel)
+            self.mainLayout.insertWidget(self.mainLayout.count() - 2, teamLabel)
         else:
             self.mainLayout.insertWidget(index, teamLabel)
 
@@ -158,6 +161,7 @@ class AutoPopulateDialog(QtWidgets.QDialog):
         super().__init__(parent, **kwargs)
         self.teams = None
         self.filePath = None
+        self.eventKeys = []
         self.setWindowModality(True)
         self.setWindowTitle("Find Teams")
         self.mainLayout = QtWidgets.QVBoxLayout()
@@ -171,7 +175,7 @@ class AutoPopulateDialog(QtWidgets.QDialog):
         self.teamInput = QtWidgets.QSpinBox(minimum=1, maximum=20000, value=4450)
         self.mainLayout.addWidget(self.teamInput)
         self.findEventsButton = QtWidgets.QPushButton(text="Find events")
-        self.findEventsButton.clicked.connect(self.findEvents)
+        self.findEventsButton.clicked.connect(lambda: asyncio.run(self.findEvents()))
         self.mainLayout.addWidget(self.findEventsButton)
         self.eventLabel = QtWidgets.QLabel(text="Event")
         self.mainLayout.addWidget(self.eventLabel)
@@ -180,38 +184,56 @@ class AutoPopulateDialog(QtWidgets.QDialog):
         self.mainLayout.addWidget(self.eventInput)
         self.dialogButtons = QtWidgets.QDialogButtonBox()
         self.dialogButtons.setStandardButtons(QtWidgets.QDialogButtonBox.Open | QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
-        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).clicked.connect(self.getTeams)
+        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).clicked.connect(lambda: asyncio.run(self.getTeams()))
         self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
         self.dialogButtons.button(QtWidgets.QDialogButtonBox.Open).clicked.connect(self.openPickListDialog)
         self.dialogButtons.button(QtWidgets.QDialogButtonBox.Cancel).clicked.connect(self.reject)
         self.mainLayout.addWidget(self.dialogButtons)
         self.show()
 
-    def findEvents(self):
-        self.eventInput.clear()
-        year = self.seasonInput.text()
-        team = self.teamInput.text()
-        response = json.loads(requests.get(f"https://www.thebluealliance.com/api/v3/team/frc{team}/events/{year}/simple", headers={"X-TBA-Auth-Key": TBAKey}).text)
-        self.eventKeys = []
-        for i in response:
-            self.eventKeys.append(i["key"])
-            self.eventInput.addItem(i["name"])
+    async def findEvents(self):
+        self.findEventsButton.setEnabled(False)
+        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
+        try:
+            year = self.seasonInput.text()
+            team = self.teamInput.text()
+            response = json.loads(requests.get(f"https://www.thebluealliance.com/api/v3/team/frc{team}/events/{year}/simple", headers={"X-TBA-Auth-Key": TBAKey}).text)
+            self.eventKeys = []
+            self.eventNames = []
+            for i in response:
+                self.eventKeys.append(i["key"])
+                self.eventNames.append(i["name"])
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", str(e))
+        else:
+            self.eventInput.clear()
+            for i in self.eventNames:
+                self.eventInput.addItem(i)
         if (len(self.eventKeys) > 0):
             self.eventInput.setEnabled(True)
             self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
         else:
             self.eventInput.setEnabled(False)
             self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
+        self.findEventsButton.setEnabled(True)
 
-    def getTeams(self):
+    async def getTeams(self):
+        self.findEventsButton.setEnabled(False)
+        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
         eventKey = self.eventKeys[self.eventInput.currentIndex()]
-        response = json.loads(requests.get(f"https://www.thebluealliance.com/api/v3/event/{eventKey}/teams/simple", headers={"X-TBA-Auth-Key": TBAKey}).text)
-        self.teams = {}
-        for i in response:
-            if i["team_number"] != int(self.teamInput.text()):
-                self.teams[i["team_number"]] = i["nickname"]
-        self.teams = dict(sorted(self.teams.items()))
-        self.accept()
+        try:
+            response = json.loads(requests.get(f"https://www.thebluealliance.com/api/v3/event/{eventKey}/teams/simple", headers={"X-TBA-Auth-Key": TBAKey}).text)
+            self.teams = {}
+            for i in response:
+                if i["team_number"] != int(self.teamInput.text()):
+                    self.teams[i["team_number"]] = i["nickname"]
+            self.teams = dict(sorted(self.teams.items()))
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", str(e))
+        else:
+            self.accept()
+        self.findEventsButton.setEnabled(True)
+        self.dialogButtons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
 
     def openPickListDialog(self):
         filePath = QtWidgets.QFileDialog.getOpenFileName(self, filter="JSON files (*.json)")[0]
@@ -260,20 +282,12 @@ class MainWindow(QtWidgets.QMainWindow):
         addClassificationAction = QtWidgets.QAction("Add classification", self)
         addClassificationAction.triggered.connect(lambda: self.addClassification("Untitled Classification", True))
         classificationMenu.addAction(addClassificationAction)
+        self.setWindowIcon(QtGui.QIcon("icon.ico"))
         self.setWindowTitle("Scouting Picklist")
         self.setMinimumSize(1000, 500)
         self.showMaximized()
         self.addClassification("Overall picks")
-        autoPopulateDialog = AutoPopulateDialog(self)
-        if autoPopulateDialog.exec() == 0:
-            sys.exit()
-        else:
-            if autoPopulateDialog.filePath != None:
-                self.filePath = autoPopulateDialog.filePath
-                self.openPickList()
-            elif autoPopulateDialog.teams != None:
-                for teamNumber, teamName in autoPopulateDialog.teams.items():
-                    self.addTeam(teamNumber, teamName)
+        self.newPickList(True, False)
 
     def addTeam(self, teamNumber, teamName, eliminated=False):
         self.teamListScrollArea.addTeam(teamNumber, teamName, eliminated)
@@ -324,37 +338,69 @@ class MainWindow(QtWidgets.QMainWindow):
             file.write(teamJson)
             file.close()
             self.needToSave = False
+            self.setWindowTitle("Scouting Picklist")
 
-    def openPickList(self):
-        file = open(self.filePath, "r")
-        teamJson = json.loads(file.read())
-        file.close()
-        self.clearClassifications(False)
-        self.needToSave = False
-        for team in teamJson["allTeams"]:
-            self.addTeam(team["teamNumber"], team["teamName"], team["eliminated"])
-        for classification in teamJson["classifications"]:
-            classificationContainer = self.addClassification(classification["name"])
-            for team in classification["teams"]:
-                classificationContainer.addTeam(team["teamNumber"], team["teamName"], team["eliminated"])
+    def openPickList(self, filePath):
+        allTeams = []
+        classifications = []
+        try:
+            file = open(filePath, "r")
+            teamJson = json.loads(file.read())
+            file.close()
+            for team in teamJson["allTeams"]:
+                allTeams.append({
+                    "teamNumber": team["teamNumber"],
+                    "teamName": team["teamName"],
+                    "eliminated": team["eliminated"]
+                })
+            for classification in teamJson["classifications"]:
+                classificationTeams = []
+                for team in classification["teams"]:
+                    classificationTeams.append({
+                        "teamNumber": team["teamNumber"],
+                        "teamName": team["teamName"],
+                        "eliminated": team["eliminated"]
+                    })
+                classifications.append({
+                    "name": classification["name"],
+                    "teams": classification["teams"]
+                })
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", str(e))
+            return False
+        else:
+            self.clearClassifications(False)
+            for team in allTeams:
+                self.addTeam(team["teamNumber"], team["teamName"], team["eliminated"])
+            for classification in classifications:
+                classificationContainer = self.addClassification(classification["name"])
+                for team in classification["teams"]:
+                    classificationContainer.addTeam(team["teamNumber"], team["teamName"], team["eliminated"])
+            self.filePath = filePath
+            self.needToSave = False
+            self.setWindowTitle("Scouting Picklist")
+            return True
 
     def openPickListDialog(self):
         if self.confirmSave():
             filePath = QtWidgets.QFileDialog.getOpenFileName(self, filter="JSON files (*.json)")[0]
             if (filePath != ""):
-                self.filePath = filePath
-                self.openPickList()
+                self.openPickList(filePath)
 
-    def newPickList(self):
-        if self.confirmSave():
+    def newPickList(self, closeOnDecline=False, confrimSave=True):
+        if not confrimSave or self.confirmSave():
             autoPopulateDialog = AutoPopulateDialog(self)
-            if autoPopulateDialog.exec() == 1:
-                self.needToSave = False
-                self.filePath = None
+            if autoPopulateDialog.exec() == 0:
+                if closeOnDecline:
+                    sys.exit()
+            else:
                 if autoPopulateDialog.filePath != None:
-                    self.filePath = autoPopulateDialog.filePath
-                    self.openPickList()
+                    if not self.openPickList(autoPopulateDialog.filePath):
+                        self.newPickList(closeOnDecline, False)
                 elif autoPopulateDialog.teams != None:
+                    self.needToSave = False
+                    self.setWindowTitle("Scouting Picklist")
+                    self.filePath = None
                     self.clearClassifications(True)
                     for teamNumber, teamName in autoPopulateDialog.teams.items():
                         self.addTeam(teamNumber, teamName)
@@ -382,8 +428,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.confirmSave():
             sys.exit()
 
+    def addNeedToSaveFlag(self):
+        self.needToSave = True
+        self.setWindowTitle("*Scouting Picklist")
+
 def addNeedToSaveFlag():
-    mainWindow.needToSave = True
+    mainWindow.addNeedToSaveFlag()
 
 def removeTeam(teamNumber):
     mainWindow.removeTeam(teamNumber)
