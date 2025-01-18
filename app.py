@@ -3,6 +3,7 @@ import requests
 import json
 import asyncio
 from PyQt5 import QtWidgets, QtCore, QtGui
+from os import path
 
 TBAKey = "V86v838SJb4GJhpaNbElRqLSLHFhyBc0LPBscDetwnXZosPS2pmtehPSNNsY6Hy1"
 
@@ -49,6 +50,13 @@ class TeamLabel(QtWidgets.QWidget):
         self.teamLabel.setFont(currentFont)
         addNeedToSaveFlag()
 
+    def highlightTeam(self):
+        print("called")
+        self.teamLabel.setStyleSheet("color: red;")
+
+    def unHighlightTeam(self):
+        self.teamLabel.setStyleSheet("")
+
 class ClassificationContainer(QtWidgets.QWidget):
     def __init__(self, isAllTeamContainer=False, name="Untitled Classification", parent=None, **kwargs):
         super().__init__(parent, **kwargs)
@@ -58,6 +66,9 @@ class ClassificationContainer(QtWidgets.QWidget):
         self.headerWidget = QtWidgets.QWidget()
         self.headerLayout = QtWidgets.QHBoxLayout()
         self.headerWidget.setLayout(self.headerLayout)
+        self.teamSelectionButton = QtWidgets.QCheckBox()
+        self.teamSelectionButton.clicked.connect(self.selectContainer)
+        self.headerLayout.addWidget(self.teamSelectionButton)
         self.nameEntry = QtWidgets.QLineEdit(text=name)
         self.nameEntry.textChanged.connect(self.nameChanged)
         self.headerLayout.addWidget(self.nameEntry, stretch=1)
@@ -94,6 +105,18 @@ class ClassificationContainer(QtWidgets.QWidget):
 
     def removeTeam(self, teamNumber):
         self.teamListWidget.removeTeam(teamNumber)
+
+    def deselect(self):
+        self.teamSelectionButton.setChecked(False)
+
+    def selectContainer(self):
+        mainWindow.selectClassification(self)
+
+    def getTeamNumbers(self):
+        return self.teamListWidget.getTeamNumbers()
+    
+    def highlightTeams(self, teamNumbers):
+        self.teamListWidget.highlightTeams(teamNumbers)
 
 class ClassificationTeamList(QtWidgets.QWidget):
     def __init__(self, isAllTeamContainer=False, parent=None, **kwargs):
@@ -144,6 +167,14 @@ class ClassificationTeamList(QtWidgets.QWidget):
                 })
         return teams
     
+    def getTeamNumbers(self):
+        teams = []
+        for i in range(self.mainLayout.count()):
+            currentWidget = self.mainLayout.itemAt(i).widget()
+            if type(currentWidget) == TeamLabel:
+                teams.append(currentWidget.teamNumber)
+        return teams
+    
     def emptyTeams(self):
         for i in reversed(range(self.mainLayout.count())):
             currentWidget = self.mainLayout.itemAt(i).widget()
@@ -155,6 +186,15 @@ class ClassificationTeamList(QtWidgets.QWidget):
             currentWidget = self.mainLayout.itemAt(i).widget()
             if type(currentWidget) == TeamLabel and currentWidget.teamNumber == teamNumber:
                 self.mainLayout.removeWidget(currentWidget)
+            
+    def highlightTeams(self, teamNumbers):
+        for i in range(self.mainLayout.count()):
+            currentWidget = self.mainLayout.itemAt(i).widget()
+            if type(currentWidget) == TeamLabel:
+                if currentWidget.teamNumber in teamNumbers:
+                    currentWidget.highlightTeam()
+                else:
+                    currentWidget.unHighlightTeam()
 
 class AutoPopulateDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, **kwargs):
@@ -282,7 +322,10 @@ class MainWindow(QtWidgets.QMainWindow):
         addClassificationAction = QtWidgets.QAction("Add classification", self)
         addClassificationAction.triggered.connect(lambda: self.addClassification("Untitled Classification", True))
         classificationMenu.addAction(addClassificationAction)
-        self.setWindowIcon(QtGui.QIcon("icon.ico"))
+        if path.exists("icon.ico"):
+            self.setWindowIcon(QtGui.QIcon("icon.ico"))
+        elif path.exists("_internal\icon.ico"):
+            self.setWindowIcon(QtGui.QIcon("_internal\icon.ico"))
         self.setWindowTitle("Scouting Picklist")
         self.setMinimumSize(1000, 500)
         self.showMaximized()
@@ -431,6 +474,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def addNeedToSaveFlag(self):
         self.needToSave = True
         self.setWindowTitle("*Scouting Picklist")
+
+    def selectClassification(self, widget):
+        for i in range(self.classificationList.count()):
+            currentWidget = self.classificationList.itemAt(i).widget()
+            if currentWidget != widget and type(currentWidget) == ClassificationContainer:
+                currentWidget.deselect()
+        teams = widget.getTeamNumbers()
+        self.teamListScrollArea.highlightTeams(teams)
+        addNeedToSaveFlag()
 
 def addNeedToSaveFlag():
     mainWindow.addNeedToSaveFlag()

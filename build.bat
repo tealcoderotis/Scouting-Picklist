@@ -1,0 +1,1 @@
+pyinstaller app.py -n "Scouting Picklist" -w -i "icon.ico" --add-data "icon.ico:."
