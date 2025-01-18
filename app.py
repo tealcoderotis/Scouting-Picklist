@@ -51,7 +51,6 @@ class TeamLabel(QtWidgets.QWidget):
         addNeedToSaveFlag()
 
     def highlightTeam(self):
-        print("called")
         self.teamLabel.setStyleSheet("color: red;")
 
     def unHighlightTeam(self):
