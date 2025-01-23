@@ -50,14 +50,17 @@ class TeamLabel(QtWidgets.QWidget):
         self.teamLabel.setFont(currentFont)
         addNeedToSaveFlag()
 
-    def highlightTeam(self):
-        self.teamLabel.setStyleSheet("color: red;")
+    def highlightTeam(self, teamExists):
+        if teamExists:
+            self.teamLabel.setStyleSheet("color: red;")
+        else:
+            self.teamLabel.setStyleSheet("color: green;")
 
-    def unHighlightTeam(self):
+    def unhighlightTeam(self):
         self.teamLabel.setStyleSheet("")
 
 class ClassificationContainer(QtWidgets.QWidget):
-    def __init__(self, isAllTeamContainer=False, name="Untitled Classification", parent=None, **kwargs):
+    def __init__(self, isAllTeamContainer=False, name="Untitled Classification", selected=False, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
         self.isAllTeamContainer = isAllTeamContainer
         self.setFixedWidth(400)
@@ -66,6 +69,7 @@ class ClassificationContainer(QtWidgets.QWidget):
         self.headerLayout = QtWidgets.QHBoxLayout()
         self.headerWidget.setLayout(self.headerLayout)
         self.teamSelectionButton = QtWidgets.QCheckBox()
+        self.teamSelectionButton.setChecked(selected)
         self.teamSelectionButton.clicked.connect(self.selectContainer)
         self.headerLayout.addWidget(self.teamSelectionButton)
         self.nameEntry = QtWidgets.QLineEdit(text=name)
@@ -79,6 +83,8 @@ class ClassificationContainer(QtWidgets.QWidget):
         self.mainScrollArea = QtWidgets.QScrollArea()
         self.mainScrollArea.setWidgetResizable(True)
         self.teamListWidget = ClassificationTeamList(self.isAllTeamContainer)
+        self.teamListWidget.teamDropped.signal.connect(self.updateSelection)
+        self.teamListWidget.teamRemoved.signal.connect(self.updateSelection)
         self.mainScrollArea.setWidget(self.teamListWidget)
         self.mainLayout.addWidget(self.mainScrollArea, stretch=1)
         self.setLayout(self.mainLayout)
@@ -88,6 +94,8 @@ class ClassificationContainer(QtWidgets.QWidget):
     
     def remove(self):
         self.parent().layout().removeWidget(self)
+        if self.teamSelectionButton.isChecked():
+            mainWindow.unselectClassifications()
         addNeedToSaveFlag()
 
     def getTeams(self):
@@ -109,7 +117,15 @@ class ClassificationContainer(QtWidgets.QWidget):
         self.teamSelectionButton.setChecked(False)
 
     def selectContainer(self):
-        mainWindow.selectClassification(self)
+        if self.teamSelectionButton.isChecked():
+            mainWindow.selectClassification(self)
+        else:
+            mainWindow.unselectClassifications()
+        addNeedToSaveFlag()
+
+    def updateSelection(self):
+        if self.teamSelectionButton.isChecked():
+            mainWindow.selectClassification(self)
 
     def getTeamNumbers(self):
         return self.teamListWidget.getTeamNumbers()
@@ -117,9 +133,20 @@ class ClassificationContainer(QtWidgets.QWidget):
     def highlightTeams(self, teamNumbers):
         self.teamListWidget.highlightTeams(teamNumbers)
 
+    def unhighlightTeams(self):
+        self.teamListWidget.unhighlightTeams()
+
+class ClassificationTeamDropSignalEmitter(QtCore.QObject):
+    signal = QtCore.pyqtSignal()
+
+class ClassificationTeamRemovedSingalEmitter(QtCore.QObject):
+    signal = QtCore.pyqtSignal()
+
 class ClassificationTeamList(QtWidgets.QWidget):
     def __init__(self, isAllTeamContainer=False, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
+        self.teamDropped = ClassificationTeamDropSignalEmitter()
+        self.teamRemoved = ClassificationTeamRemovedSingalEmitter()
         self.setAcceptDrops(True)
         self.isAllTeamContainer = isAllTeamContainer
         self.mainLayout = QtWidgets.QVBoxLayout()
@@ -135,17 +162,23 @@ class ClassificationTeamList(QtWidgets.QWidget):
         if (type(e.source()) == TeamLabel):
             widget = e.source()
             widgetToInsertBefore = -1
-            for i in range(self.mainLayout.count()):
-                currentWidget = self.mainLayout.itemAt(i).widget()
-                if type(currentWidget) == TeamLabel and e.pos().y() < currentWidget.y() + currentWidget.size().height():
-                    widgetToInsertBefore = i
-                    break
-            if not widget.isFromAllTeamContainer:
-                widget.parent().layout().removeWidget(widget)
-            if not self.isAllTeamContainer:
-                self.addTeam(widget.teamNumber, widget.teamName, widget.eliminated, widgetToInsertBefore)
-            addNeedToSaveFlag()
-            e.accept()
+            if not self.isAllTeamContainer and widget.parent() != self and self.hasTeam(widget.teamNumber):
+                QtWidgets.QMessageBox.warning(self, "Team Already Added", f"You already have {widget.teamNumber} - {widget.teamName} in this classification")
+                e.accept()
+            else:
+                for i in range(self.mainLayout.count()):
+                    currentWidget = self.mainLayout.itemAt(i).widget()
+                    if type(currentWidget) == TeamLabel and e.pos().y() < currentWidget.y() + currentWidget.size().height():
+                        widgetToInsertBefore = i
+                        break
+                if not widget.isFromAllTeamContainer:
+                    widget.parent().layout().removeWidget(widget)
+                    widget.parent().teamRemoved.signal.emit()
+                if not self.isAllTeamContainer:
+                    self.addTeam(widget.teamNumber, widget.teamName, widget.eliminated, widgetToInsertBefore)
+                addNeedToSaveFlag()
+                self.teamDropped.signal.emit()
+                e.accept()
 
     def addTeam(self, teamNumber, teamName, eliminated=False,  index=-1):
         teamLabel = TeamLabel(teamNumber, teamName, eliminated, self.isAllTeamContainer)
@@ -191,9 +224,22 @@ class ClassificationTeamList(QtWidgets.QWidget):
             currentWidget = self.mainLayout.itemAt(i).widget()
             if type(currentWidget) == TeamLabel:
                 if currentWidget.teamNumber in teamNumbers:
-                    currentWidget.highlightTeam()
+                    currentWidget.highlightTeam(True)
                 else:
-                    currentWidget.unHighlightTeam()
+                    currentWidget.highlightTeam(False)
+
+    def unhighlightTeams(self):
+        for i in range(self.mainLayout.count()):
+            currentWidget = self.mainLayout.itemAt(i).widget()
+            if type(currentWidget) == TeamLabel:
+                currentWidget.unhighlightTeam()
+
+    def hasTeam(self, teamNumber):
+        for i in range(self.mainLayout.count()):
+            currentWidget = self.mainLayout.itemAt(i).widget()
+            if type(currentWidget) == TeamLabel and currentWidget.teamNumber == teamNumber:
+                return True
+        return False
 
 class AutoPopulateDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, **kwargs):
@@ -323,12 +369,13 @@ class MainWindow(QtWidgets.QMainWindow):
         classificationMenu.addAction(addClassificationAction)
         if path.exists("icon.ico"):
             self.setWindowIcon(QtGui.QIcon("icon.ico"))
-        elif path.exists("_internal\icon.ico"):
-            self.setWindowIcon(QtGui.QIcon("_internal\icon.ico"))
+        elif path.exists("_internal\\icon.ico"):
+            self.setWindowIcon(QtGui.QIcon("_internal\\icon.ico"))
         self.setWindowTitle("Scouting Picklist")
         self.setMinimumSize(1000, 500)
         self.showMaximized()
-        self.addClassification("Overall picks")
+        classification = self.addClassification("Overall picks")
+        classification.teamSelectionButton.setChecked(True)
         self.newPickList(True, False)
 
     def addTeam(self, teamNumber, teamName, eliminated=False):
@@ -346,6 +393,8 @@ class MainWindow(QtWidgets.QMainWindow):
             currentWidget = self.classificationList.itemAt(i).widget()
             if type(currentWidget) == ClassificationContainer:
                 currentWidget.removeTeam(teamNumber)
+                if currentWidget.teamSelectionButton.isChecked():
+                    self.selectClassification(currentWidget)
     
     def clearClassifications(self, addOveralPicks=True):
         self.teamListScrollArea.emptyTeams()
@@ -354,7 +403,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if type(currentWidget) == ClassificationContainer:
                 self.classificationList.removeWidget(currentWidget)
         if addOveralPicks:
-            self.addClassification("Overall picks")
+            classification = self.addClassification("Overall picks")
+            classification.teamSelectionButton.setChecked(True)
+            self.selectClassification(classification)
 
     def savePickListAs(self):
         filePath = QtWidgets.QFileDialog.getSaveFileName(self, filter="JSON files (*.json)")[0]
@@ -368,13 +419,17 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             allTeams = self.teamListScrollArea.getTeams()["teams"]
             allClassifications = []
+            selectedClassification = -1
             for i in range(self.classificationList.count()):
                 currentWidget = self.classificationList.itemAt(i).widget()
                 if (type(currentWidget) == ClassificationContainer):
                     allClassifications.append(currentWidget.getTeams())
+                    if currentWidget.teamSelectionButton.isChecked():
+                        selectedClassification = i
             teamJson = json.dumps({
                 "allTeams": allTeams,
-                "classifications": allClassifications
+                "classifications": allClassifications,
+                "selectedClassification": selectedClassification
             })
             file = open(self.filePath, "w")
             file.write(teamJson)
@@ -385,10 +440,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def openPickList(self, filePath):
         allTeams = []
         classifications = []
+        selectedClassification = -1
         try:
             file = open(filePath, "r")
             teamJson = json.loads(file.read())
             file.close()
+            selectedClassification = teamJson["selectedClassification"]
             for team in teamJson["allTeams"]:
                 allTeams.append({
                     "teamNumber": team["teamNumber"],
@@ -414,10 +471,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.clearClassifications(False)
             for team in allTeams:
                 self.addTeam(team["teamNumber"], team["teamName"], team["eliminated"])
-            for classification in classifications:
-                classificationContainer = self.addClassification(classification["name"])
-                for team in classification["teams"]:
+            for i in range(len(classifications)):
+                classificationContainer = self.addClassification(classifications[i]["name"])
+                for team in classifications[i]["teams"]:
                     classificationContainer.addTeam(team["teamNumber"], team["teamName"], team["eliminated"])
+                if i == selectedClassification:
+                    classificationContainer.teamSelectionButton.setChecked(True)
+                    self.selectClassification(classificationContainer)
             self.filePath = filePath
             self.needToSave = False
             self.setWindowTitle("Scouting Picklist")
@@ -446,6 +506,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.clearClassifications(True)
                     for teamNumber, teamName in autoPopulateDialog.teams.items():
                         self.addTeam(teamNumber, teamName)
+                    self.selectClassification(self.classificationList.itemAt(0).widget())
 
     def closeEvent(self, e):
         if self.confirmSave():
@@ -481,7 +542,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 currentWidget.deselect()
         teams = widget.getTeamNumbers()
         self.teamListScrollArea.highlightTeams(teams)
-        addNeedToSaveFlag()
+
+    def unselectClassifications(self):
+        self.teamListScrollArea.unhighlightTeams()
 
 def addNeedToSaveFlag():
     mainWindow.addNeedToSaveFlag()
