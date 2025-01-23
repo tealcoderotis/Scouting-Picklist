@@ -60,7 +60,7 @@ class TeamLabel(QtWidgets.QWidget):
         self.teamLabel.setStyleSheet("")
 
 class ClassificationContainer(QtWidgets.QWidget):
-    def __init__(self, isAllTeamContainer=False, name="Untitled Classification", selected=False, parent=None, **kwargs):
+    def __init__(self, isAllTeamContainer=False, name="Untitled classification", selected=False, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
         self.isAllTeamContainer = isAllTeamContainer
         self.setFixedWidth(400)
@@ -192,11 +192,17 @@ class ClassificationTeamList(QtWidgets.QWidget):
         for i in range(self.mainLayout.count()):
             currentWidget = self.mainLayout.itemAt(i).widget()
             if type(currentWidget) == TeamLabel:
-                teams.append({
-                    "teamNumber": currentWidget.teamNumber,
-                    "teamName": currentWidget.teamName,
-                    "eliminated": currentWidget.eliminated
-                })
+                if self.isAllTeamContainer:
+                    teams.append({
+                        "teamNumber": currentWidget.teamNumber,
+                        "teamName": currentWidget.teamName,
+                        "eliminated": currentWidget.eliminated
+                    })
+                else:
+                    teams.append({
+                        "teamNumber": currentWidget.teamNumber,
+                        "teamName": currentWidget.teamName
+                    })
         return teams
     
     def getTeamNumbers(self):
@@ -365,7 +371,7 @@ class MainWindow(QtWidgets.QMainWindow):
         fileMenu.addAction(exitAction)
         classificationMenu = menu.addMenu("Classification")
         addClassificationAction = QtWidgets.QAction("Add classification", self)
-        addClassificationAction.triggered.connect(lambda: self.addClassification("Untitled Classification", True))
+        addClassificationAction.triggered.connect(lambda: self.addClassification("Untitled classification", True))
         classificationMenu.addAction(addClassificationAction)
         if path.exists("icon.ico"):
             self.setWindowIcon(QtGui.QIcon("icon.ico"))
@@ -381,7 +387,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def addTeam(self, teamNumber, teamName, eliminated=False):
         self.teamListScrollArea.addTeam(teamNumber, teamName, eliminated)
 
-    def addClassification(self, name="Untitled Classification", savingRequired=False):
+    def addClassification(self, name="Untitled classification", savingRequired=False):
         classificationContainer = ClassificationContainer(False, name)
         self.classificationList.insertWidget(self.classificationList.count() - 1, classificationContainer)
         if savingRequired:
@@ -457,8 +463,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 for team in classification["teams"]:
                     classificationTeams.append({
                         "teamNumber": team["teamNumber"],
-                        "teamName": team["teamName"],
-                        "eliminated": team["eliminated"]
+                        "teamName": team["teamName"]
                     })
                 classifications.append({
                     "name": classification["name"],
@@ -474,7 +479,7 @@ class MainWindow(QtWidgets.QMainWindow):
             for i in range(len(classifications)):
                 classificationContainer = self.addClassification(classifications[i]["name"])
                 for team in classifications[i]["teams"]:
-                    classificationContainer.addTeam(team["teamNumber"], team["teamName"], team["eliminated"])
+                    classificationContainer.addTeam(team["teamNumber"], team["teamName"])
                 if i == selectedClassification:
                     classificationContainer.teamSelectionButton.setChecked(True)
                     self.selectClassification(classificationContainer)
