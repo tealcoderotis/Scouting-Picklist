@@ -8,11 +8,12 @@ from os import path
 TBAKey = "V86v838SJb4GJhpaNbElRqLSLHFhyBc0LPBscDetwnXZosPS2pmtehPSNNsY6Hy1"
 
 class TeamLabel(QtWidgets.QWidget):
-    def __init__(self, teamNumber, teamName, eliminated=False, isFromAllTeamContainer=False, parent=None, **kwargs):
+    def __init__(self, teamNumber, teamName, eliminated=False, isFromAllTeamContainer=False, note="", parent=None, **kwargs):
         super().__init__(parent, **kwargs)
         self.teamNumber = teamNumber
         self.teamName = teamName
         self.eliminated = eliminated
+        self.note = note
         self.setMinimumHeight(50)
         self.isFromAllTeamContainer = isFromAllTeamContainer
         self.mainLayout = QtWidgets.QHBoxLayout()
@@ -26,9 +27,13 @@ class TeamLabel(QtWidgets.QWidget):
         self.eliminateButton = QtWidgets.QPushButton(text="Eliminate", checkable=True)
         self.eliminateButton.clicked.connect(self.eliminate)
         self.eliminateButton.setChecked(self.eliminated)
+        self.noteButton = QtWidgets.QPushButton(text="Note")
+        self.noteButton.clicked.connect(self.showNote)
         self.mainLayout.addWidget(self.teamLabel, stretch=1)
         if isFromAllTeamContainer:
             self.mainLayout.addWidget(self.eliminateButton)
+        else:
+            self.mainLayout.addWidget(self.noteButton)
 
     def mouseMoveEvent(self, e):
         if not self.eliminated and e.buttons() == QtCore.Qt.MouseButton.LeftButton:
@@ -58,6 +63,12 @@ class TeamLabel(QtWidgets.QWidget):
 
     def unhighlightTeam(self):
         self.teamLabel.setStyleSheet("")
+
+    def showNote(self):
+        noteDialog = NoteDialog(self.note, mainWindow)
+        if noteDialog.exec() == 1:
+            self.note = noteDialog.noteText
+            addNeedToSaveFlag()
 
 class ClassificationContainer(QtWidgets.QWidget):
     def __init__(self, isAllTeamContainer=False, name="Untitled classification", selected=False, parent=None, **kwargs):
@@ -89,8 +100,8 @@ class ClassificationContainer(QtWidgets.QWidget):
         self.mainLayout.addWidget(self.mainScrollArea, stretch=1)
         self.setLayout(self.mainLayout)
 
-    def addTeam(self, teamNumber, teamName, eliminated=False):
-        self.teamListWidget.addTeam(teamNumber, teamName, eliminated, -1)
+    def addTeam(self, teamNumber, teamName, eliminated=False, note=""):
+        self.teamListWidget.addTeam(teamNumber, teamName, eliminated, note, -1)
     
     def remove(self):
         self.parent().layout().removeWidget(self)
@@ -175,13 +186,13 @@ class ClassificationTeamList(QtWidgets.QWidget):
                     widget.parent().layout().removeWidget(widget)
                     widget.parent().teamRemoved.signal.emit()
                 if not self.isAllTeamContainer:
-                    self.addTeam(widget.teamNumber, widget.teamName, widget.eliminated, widgetToInsertBefore)
+                    self.addTeam(widget.teamNumber, widget.teamName, widget.eliminated, widget.note, widgetToInsertBefore)
                 addNeedToSaveFlag()
                 self.teamDropped.signal.emit()
                 e.accept()
 
-    def addTeam(self, teamNumber, teamName, eliminated=False,  index=-1):
-        teamLabel = TeamLabel(teamNumber, teamName, eliminated, self.isAllTeamContainer)
+    def addTeam(self, teamNumber, teamName, eliminated=False, note="",  index=-1):
+        teamLabel = TeamLabel(teamNumber, teamName, eliminated, self.isAllTeamContainer, note)
         if (index == -1):
             self.mainLayout.insertWidget(self.mainLayout.count() - 2, teamLabel)
         else:
@@ -201,7 +212,8 @@ class ClassificationTeamList(QtWidgets.QWidget):
                 else:
                     teams.append({
                         "teamNumber": currentWidget.teamNumber,
-                        "teamName": currentWidget.teamName
+                        "teamName": currentWidget.teamName,
+                        "note": currentWidget.note
                     })
         return teams
     
@@ -246,6 +258,28 @@ class ClassificationTeamList(QtWidgets.QWidget):
             if type(currentWidget) == TeamLabel and currentWidget.teamNumber == teamNumber:
                 return True
         return False
+
+class NoteDialog(QtWidgets.QDialog):
+    def __init__(self, currentText="", parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.setWindowModality(True)
+        self.setWindowTitle("Picklist Note")
+        self.mainLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(self.mainLayout)
+        self.noteInput = QtWidgets.QTextEdit()
+        self.noteInput.setAcceptRichText(False)
+        self.noteInput.setPlainText(currentText)
+        self.mainLayout.addWidget(self.noteInput)
+        self.dialogButtons = QtWidgets.QDialogButtonBox()
+        self.dialogButtons.setStandardButtons(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.dialogButtons.accepted.connect(self.accept)
+        self.dialogButtons.rejected.connect(self.reject)
+        self.mainLayout.addWidget(self.dialogButtons)
+        self.show()
+    
+    def accept(self):
+        self.noteText = self.noteInput.toPlainText()
+        return super().accept()
 
 class AutoPopulateDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, **kwargs):
@@ -463,7 +497,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 for team in classification["teams"]:
                     classificationTeams.append({
                         "teamNumber": team["teamNumber"],
-                        "teamName": team["teamName"]
+                        "teamName": team["teamName"],
+                        "note": team["note"]
                     })
                 classifications.append({
                     "name": classification["name"],
@@ -479,7 +514,7 @@ class MainWindow(QtWidgets.QMainWindow):
             for i in range(len(classifications)):
                 classificationContainer = self.addClassification(classifications[i]["name"])
                 for team in classifications[i]["teams"]:
-                    classificationContainer.addTeam(team["teamNumber"], team["teamName"])
+                    classificationContainer.addTeam(team["teamNumber"], team["teamName"], False, team["note"])
                 if i == selectedClassification:
                     classificationContainer.teamSelectionButton.setChecked(True)
                     self.selectClassification(classificationContainer)
@@ -562,11 +597,13 @@ app.setStyle(QtWidgets.QStyleFactory.create("fusion"))
 palette = QtGui.QPalette()
 palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(255, 255, 255))
 palette.setColor(QtGui.QPalette.Button, QtGui.QColor(50, 50, 50))
+palette.setColor(QtGui.QPalette.Disabled, QtGui.QPalette.Button, QtGui.QColor(33, 33, 33))
 palette.setColor(QtGui.QPalette.Light, QtGui.QColor(75, 75, 75))
 palette.setColor(QtGui.QPalette.Midlight, QtGui.QColor(62, 62, 62))
 palette.setColor(QtGui.QPalette.Dark, QtGui.QColor(25, 25, 25))
 palette.setColor(QtGui.QPalette.Mid, QtGui.QColor(33, 33, 33))
 palette.setColor(QtGui.QPalette.Text, QtGui.QColor(255, 255, 255))
+palette.setColor(QtGui.QPalette.Disabled, QtGui.QPalette.Text, QtGui.QColor(255, 255, 255, 127))
 palette.setColor(QtGui.QPalette.BrightText, QtGui.QColor(255, 255, 255))
 palette.setColor(QtGui.QPalette.ButtonText, QtGui.QColor(255, 255, 255))
 palette.setColor(QtGui.QPalette.Base, QtGui.QColor(0, 0, 0))
