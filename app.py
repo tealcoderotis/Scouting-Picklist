@@ -5,7 +5,15 @@ import asyncio
 from PyQt5 import QtWidgets, QtCore, QtGui
 from os import path
 
-TBAKey = "V86v838SJb4GJhpaNbElRqLSLHFhyBc0LPBscDetwnXZosPS2pmtehPSNNsY6Hy1"
+if path.exists("config.json"):
+    try:
+        file = open("config.json")
+        TBAKey = json.loads(file.read())["tbaKey"]
+        file.close()
+    except:
+        TBAKey = ""
+else:
+    TBAKey = ""
 
 class TeamLabel(QtWidgets.QWidget):
     def __init__(self, teamNumber, teamName, eliminated=False, isFromAllTeamContainer=False, note="", parent=None, **kwargs):
