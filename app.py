@@ -2,12 +2,16 @@ import sys
 import requests
 import json
 import asyncio
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
 from os import path
 
-if path.exists("config.json"):
+programDirectory = Path(__file__).parent
+configPath = programDirectory / "config.json"
+
+if path.exists(configPath):
     try:
-        file = open("config.json")
+        file = open(configPath)
         TBAKey = json.loads(file.read())["tbaKey"]
         file.close()
     except:
