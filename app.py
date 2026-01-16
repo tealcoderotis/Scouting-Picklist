@@ -4,7 +4,7 @@ import json
 import asyncio
 from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
-from os import path
+from os import path, environ
 
 programDirectory = Path(__file__).parent
 configPath = programDirectory / "config.json"
@@ -604,6 +604,9 @@ def addNeedToSaveFlag():
 def removeTeam(teamNumber):
     mainWindow.removeTeam(teamNumber)
 
+environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
+QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
 app = QtWidgets.QApplication(sys.argv)
 app.setStyle(QtWidgets.QStyleFactory.create("fusion"))
 palette = QtGui.QPalette()
