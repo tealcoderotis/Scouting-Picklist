@@ -2,6 +2,7 @@ import sys
 import requests
 import json
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
 from os import path, environ
@@ -12,12 +13,17 @@ configPath = programDirectory / "config.json"
 if path.exists(configPath):
     try:
         file = open(configPath)
-        TBAKey = json.loads(file.read())["tbaKey"]
-        file.close()
+        config = json.loads(file.read())
+        TBAKey = config["tbaKey"]
+        configTeamNumber = config["teamNumber"]
     except:
         TBAKey = ""
+        configTeamNumber = 1
+    finally:
+        file.close()
 else:
     TBAKey = ""
+    configTeamNumber = 1
 
 class TeamLabel(QtWidgets.QWidget):
     def __init__(self, teamNumber, teamName, eliminated=False, isFromAllTeamContainer=False, note="", parent=None, **kwargs):
@@ -305,11 +311,11 @@ class AutoPopulateDialog(QtWidgets.QDialog):
         self.setLayout(self.mainLayout)
         self.seasonInputLabel = QtWidgets.QLabel(text="Season")
         self.mainLayout.addWidget(self.seasonInputLabel)
-        self.seasonInput = QtWidgets.QSpinBox(minimum=1000, maximum=3000, value=2025)
+        self.seasonInput = QtWidgets.QSpinBox(minimum=1000, maximum=3000, value=datetime.now().year)
         self.mainLayout.addWidget(self.seasonInput)
         self.teamInputLabel = QtWidgets.QLabel(text="Team number")
         self.mainLayout.addWidget(self.teamInputLabel)
-        self.teamInput = QtWidgets.QSpinBox(minimum=1, maximum=20000, value=4450)
+        self.teamInput = QtWidgets.QSpinBox(minimum=1, maximum=20000, value=configTeamNumber)
         self.mainLayout.addWidget(self.teamInput)
         self.findEventsButton = QtWidgets.QPushButton(text="Find events")
         self.findEventsButton.clicked.connect(lambda: asyncio.run(self.findEvents()))
