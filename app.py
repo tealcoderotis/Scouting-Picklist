@@ -34,8 +34,11 @@ class TeamLabel(QtWidgets.QWidget):
         self.note = note
         self.setMinimumHeight(50)
         self.isFromAllTeamContainer = isFromAllTeamContainer
-        self.mainLayout = QtWidgets.QHBoxLayout()
+        self.mainLayout = QtWidgets.QVBoxLayout()
         self.setLayout(self.mainLayout)
+        self.teamNumberWidget = QtWidgets.QWidget()
+        self.teamNumberLayout = QtWidgets.QHBoxLayout()
+        self.teamNumberWidget.setLayout(self.teamNumberLayout)
         self.teamLabel = QtWidgets.QLabel(text=f"{teamNumber} - {teamName}")
         self.teamLabel.setText(f"{teamNumber} - {teamName}")
         self.teamLabel.setWordWrap(True)
@@ -47,11 +50,16 @@ class TeamLabel(QtWidgets.QWidget):
         self.eliminateButton.setChecked(self.eliminated)
         self.noteButton = QtWidgets.QPushButton(text="Note")
         self.noteButton.clicked.connect(self.showNote)
-        self.mainLayout.addWidget(self.teamLabel, stretch=1)
+        self.teamNumberLayout.addWidget(self.teamLabel, stretch=1)
+        self.mainLayout.addWidget(self.teamNumberWidget)
+        self.noteLabel = QtWidgets.QLabel(self.note)
+        self.noteLabel.setWordWrap(True)
         if isFromAllTeamContainer:
-            self.mainLayout.addWidget(self.eliminateButton)
+            self.teamNumberLayout.addWidget(self.eliminateButton)
         else:
-            self.mainLayout.addWidget(self.noteButton)
+            self.teamNumberLayout.addWidget(self.noteButton)
+            if len(self.note) > 0:
+                self.mainLayout.addWidget(self.noteLabel)
 
     def mouseMoveEvent(self, e):
         if not self.eliminated and e.buttons() == QtCore.Qt.MouseButton.LeftButton:
@@ -61,6 +69,7 @@ class TeamLabel(QtWidgets.QWidget):
             pixmap = QtGui.QPixmap(self.size())
             self.render(pixmap)
             drag.setPixmap(pixmap)
+            drag.setHotSpot(e.pos())
             drag.exec(QtCore.Qt.DropAction.MoveAction)
         return super().mouseMoveEvent(e)
 
@@ -86,6 +95,11 @@ class TeamLabel(QtWidgets.QWidget):
         noteDialog = NoteDialog(self.note, mainWindow)
         if noteDialog.exec() == 1:
             self.note = noteDialog.noteText
+            self.noteLabel.setText(self.note)
+            if len(self.note) > 0:
+                self.mainLayout.addWidget(self.noteLabel)
+            else:
+                self.mainLayout.removeWidget(self.noteLabel)
             addNeedToSaveFlag()
 
 class ClassificationContainer(QtWidgets.QWidget):
