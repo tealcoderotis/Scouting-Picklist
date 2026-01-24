@@ -439,12 +439,12 @@ class MainWindow(QtWidgets.QMainWindow):
         addClassificationAction = QtWidgets.QAction("Add classification", self)
         addClassificationAction.triggered.connect(lambda: self.addClassification("Untitled classification", True))
         classificationMenu.addAction(addClassificationAction)
-        if path.exists("icon.ico"):
-            self.setWindowIcon(QtGui.QIcon("icon.ico"))
-        elif path.exists("_internal\\icon.ico"):
-            self.setWindowIcon(QtGui.QIcon("_internal\\icon.ico"))
+        if path.exists(programDirectory / "icon.ico"):
+            self.setWindowIcon(QtGui.QIcon(str(programDirectory / "icon.ico")))
+        elif path.exists(programDirectory / "_internal" / "icon.ico"):
+            self.setWindowIcon(QtGui.QIcon(str(programDirectory / "_internal" / "icon.ico")))
         self.setWindowTitle("Scouting Picklist")
-        self.setMinimumSize(1000, 500)
+        self.resize(1000, 500)
         self.showMaximized()
         classification = self.addClassification("Overall picks")
         classification.teamSelectionButton.setChecked(True)
